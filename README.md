@@ -112,7 +112,7 @@ If Sticker-Renamer saved you time or made managing your sticker collections easi
 
 | ☕ Support Developer | 🌐 Updates Channel | ⛑ Need Assistance |
 | :---: | :---: | :---: |
-| [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/) | [![Updates](https://img.shields.io/badge/Updates-Channel-FF0055?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/) | [![Support](https://img.shields.io/badge/Support-Group-229ED9?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/) |
+| [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/MrBoss002) | [![Updates](https://img.shields.io/badge/Updates-Channel-FF0055?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/MrBossBotz) | [![Support](https://img.shields.io/badge/Support-Group-229ED9?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/MrBossSupport) |
 
 <br />
 
