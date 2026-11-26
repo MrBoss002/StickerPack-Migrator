@@ -54,20 +54,16 @@ async def process_shortname(message: Message, state: FSMContext):
         )
         return
 
-    # Construct full name: <shortname>_by_<bot_username>
     bot_info = await message.bot.get_me()
     full_short_name = f"{shortname}_by_{bot_info.username}"
 
-    # Check if the short name is already occupied on Telegram
     try:
         await message.bot.get_sticker_set(name=full_short_name)
-        # If this succeeds, the pack already exists!
         await message.answer(
             "❌ **Short name already taken!** Another pack is already using this suffix. Please choose a different one:"
         )
         return
     except Exception:
-        # If it throws an exception, the pack doesn't exist yet -> Name is available!
         pass
 
     await state.update_data(new_shortname=shortname)
@@ -77,7 +73,7 @@ async def process_shortname(message: Message, state: FSMContext):
     )
     await state.set_state(CloneStickerStates.waiting_for_icon)
 
-# 4. Step 3: Receiving Icon / Skip & Executing Clone
+# 4. Step 3: Receiving Icon / Skip & Executing Clone with Live Progress
 @router.message(CloneStickerStates.waiting_for_icon)
 async def process_icon(message: Message, state: FSMContext):
     icon_file_id = None
@@ -93,17 +89,26 @@ async def process_icon(message: Message, state: FSMContext):
     data = await state.get_data()
     await state.clear()
 
-    progress_msg = await message.answer("⏳ Cloning sticker pack... Please wait a moment.")
+    # Initial status message
+    progress_msg = await message.answer("⏳ **Initialization:** Preparing to clone sticker pack...")
+
+    # Define a helper callback to update the message text at each step
+    async def update_progress(status_text: str):
+        try:
+            await progress_msg.edit_text(f"⏳ **Cloning in Progress...**\n\n{status_text}", parse_mode="Markdown")
+        except Exception:
+            pass
 
     try:
-        # Execute the cloning service
+        # Execute cloning with progress updates and safe sleep delays
         new_pack_link = await clone_sticker_pack(
             bot=message.bot,
             user_id=message.from_user.id,
             source_short_name=data.get('source_short_name'),
             new_title=data.get('new_title'),
             new_short_name=data.get('new_shortname'),
-            icon_file_id=icon_file_id
+            icon_file_id=icon_file_id,
+            progress_callback=update_progress
         )
 
         await progress_msg.edit_text(
