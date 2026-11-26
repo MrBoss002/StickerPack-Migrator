@@ -1,6 +1,7 @@
 import re
 from aiogram import Router, F
 from aiogram.types import Message
+from aiogram.filters import StateFilter
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from src.services.telegram_api import clone_sticker_pack
@@ -14,10 +15,12 @@ class CloneStickerStates(StatesGroup):
 
 STICKER_REGEX = re.compile(r"(?:https?://)?(?:t\.me|telegram\.me)/addstickers/([a-zA-Z0-9_]+)")
 
-@router.message(F.text & ~F.text.startswith("/"))
+# 1. Entry point: Only triggers when user is NOT in any active state (idle)
+@router.message(StateFilter(None), F.text & ~F.text.startswith("/"))
 async def process_sticker_link(message: Message, state: FSMContext):
     match = STICKER_REGEX.search(message.text)
     if not match:
+        await message.answer("⚠️ Please send a valid Telegram sticker pack link to start cloning (e.g., `https://t.me/addstickers/...`)")
         return
     
     source_short_name = match.group(1)
@@ -30,7 +33,8 @@ async def process_sticker_link(message: Message, state: FSMContext):
     )
     await state.set_state(CloneStickerStates.waiting_for_title)
 
-@router.message(CloneStickerStates.waiting_for_title, F.text)
+# 2. Step 1: Receiving Display Name
+@router.message(CloneStickerStates.waiting_for_title, F.text & ~F.text.startswith("/"))
 async def process_title(message: Message, state: FSMContext):
     await state.update_data(new_title=message.text.strip())
     await message.answer(
@@ -39,7 +43,8 @@ async def process_title(message: Message, state: FSMContext):
     )
     await state.set_state(CloneStickerStates.waiting_for_shortname)
 
-@router.message(CloneStickerStates.waiting_for_shortname, F.text)
+# 3. Step 2: Receiving Short Name
+@router.message(CloneStickerStates.waiting_for_shortname, F.text & ~F.text.startswith("/"))
 async def process_shortname(message: Message, state: FSMContext):
     shortname = message.text.strip()
     
@@ -56,6 +61,7 @@ async def process_shortname(message: Message, state: FSMContext):
     )
     await state.set_state(CloneStickerStates.waiting_for_icon)
 
+# 4. Step 3: Receiving Icon / Skip & Executing Clone
 @router.message(CloneStickerStates.waiting_for_icon)
 async def process_icon(message: Message, state: FSMContext):
     icon_file_id = None
