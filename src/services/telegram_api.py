@@ -34,30 +34,24 @@ async def clone_sticker_pack(
         full_short_name = f"{new_short_name}_by_{bot_info.username}"
 
         # 3. Map existing stickers into InputSticker objects
-        # Telegram allows bots to reuse file_id directly without re-downloading every file!
         input_stickers = []
         for sticker in source_pack.stickers:
             input_stickers.append(
                 InputSticker(
                     sticker=sticker.file_id,
                     emoji_list=sticker.emoji_list if hasattr(sticker, 'emoji_list') else [sticker.emoji],
-                    format=sticker_format  # <-- FIXED: Explicitly added the required format field here
+                    format=sticker_format
                 )
             )
 
-        # 4. Handle Thumbnail/Icon
-        # If user didn't provide an icon and didn't skip, use the first sticker as thumbnail
-        thumbnail = icon_file_id if icon_file_id else None
-
-        # 5. Create the new sticker set using the bot's account
+        # 4. Create the new sticker set using the bot's account cleanly
         success = await bot.create_new_sticker_set(
             user_id=user_id,
             name=full_short_name,
             title=new_title,
             stickers=input_stickers,
             sticker_format=sticker_format,
-            sticker_type=source_pack.sticker_type,
-            thumbnail=thumbnail
+            sticker_type=source_pack.sticker_type
         )
 
         if success:
