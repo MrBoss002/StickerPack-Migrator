@@ -43,7 +43,7 @@ async def process_title(message: Message, state: FSMContext):
     )
     await state.set_state(CloneStickerStates.waiting_for_shortname)
 
-# 3. Step 2: Receiving Short Name
+# 3. Step 2: Receiving Short Name & Checking Availability
 @router.message(CloneStickerStates.waiting_for_shortname, F.text & ~F.text.startswith("/"))
 async def process_shortname(message: Message, state: FSMContext):
     shortname = message.text.strip()
@@ -53,6 +53,22 @@ async def process_shortname(message: Message, state: FSMContext):
             "❌ Invalid format. Short names can only contain letters, numbers, and underscores. Try again:"
         )
         return
+
+    # Construct full name: <shortname>_by_<bot_username>
+    bot_info = await message.bot.get_me()
+    full_short_name = f"{shortname}_by_{bot_info.username}"
+
+    # Check if the short name is already occupied on Telegram
+    try:
+        await message.bot.get_sticker_set(name=full_short_name)
+        # If this succeeds, the pack already exists!
+        await message.answer(
+            "❌ **Short name already taken!** Another pack is already using this suffix. Please choose a different one:"
+        )
+        return
+    except Exception:
+        # If it throws an exception, the pack doesn't exist yet -> Name is available!
+        pass
 
     await state.update_data(new_shortname=shortname)
     await message.answer(
