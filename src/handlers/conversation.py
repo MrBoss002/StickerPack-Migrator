@@ -111,9 +111,12 @@ async def process_icon(message: Message, state: FSMContext):
             progress_callback=update_progress
         )
 
+        # Format links nicely whether it's 1 part or multiple split parts
+        links_text = "\n".join([f"• {link}" for link in result['links']])
+
         await progress_msg.edit_text(
             "🎉 **Sticker Pack Cloned Successfully!**\n\n"
-            f"🔗 **New Pack Link:** {result['link']}\n\n"
+            f"🔗 **New Pack Link(s):**\n{links_text}\n\n"
             f"📊 **Cloning Statistics:**\n"
             f"• ⏱️ **Total Time Taken:** {result['total_time']} seconds\n"
             f"• 💤 **Anti-Flood Naps:** {result['nap_count']} breaks ({result['nap_time']}s total)",
