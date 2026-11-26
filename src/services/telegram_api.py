@@ -40,7 +40,8 @@ async def clone_sticker_pack(
             input_stickers.append(
                 InputSticker(
                     sticker=sticker.file_id,
-                    emoji_list=sticker.emoji_list if hasattr(sticker, 'emoji_list') else [sticker.emoji]
+                    emoji_list=sticker.emoji_list if hasattr(sticker, 'emoji_list') else [sticker.emoji],
+                    format=sticker_format  # <-- FIXED: Explicitly added the required format field here
                 )
             )
 
@@ -49,7 +50,6 @@ async def clone_sticker_pack(
         thumbnail = icon_file_id if icon_file_id else None
 
         # 5. Create the new sticker set using the bot's account
-        # Note: create_new_sticker_set requires user_id (who owns the pack via the bot)
         success = await bot.create_new_sticker_set(
             user_id=user_id,
             name=full_short_name,
