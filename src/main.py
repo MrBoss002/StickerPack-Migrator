@@ -3,6 +3,7 @@ import logging
 from aiogram import Bot, Dispatcher
 from src.config import BOT_TOKEN
 from src.handlers.commands import router as commands_router
+from src.handlers.conversation import router as conversation_router
 
 async def main():
     # Configure logging to see events in your terminal
@@ -12,8 +13,9 @@ async def main():
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher()
 
-    # Register routers (handlers)
+    # Register all routers (handlers & conversation wizard)
     dp.include_router(commands_router)
+    dp.include_router(conversation_router)
 
     print("🤖 Sticker-Renamer bot is starting...")
     
