@@ -2,7 +2,7 @@ import asyncio
 import time
 from aiogram import Bot
 from aiogram.types import InputSticker
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 
 async def clone_sticker_pack(
     bot: Bot,
@@ -14,8 +14,8 @@ async def clone_sticker_pack(
     progress_callback = None
 ):
     """
-    Core service to clone a sticker pack with automatic chunking (max 50 stickers per pack 
-    to respect Telegram limits), live telemetry, elapsed time, and nap counters.
+    Core service to clone a sticker pack with automatic chunking (max 50 stickers per pack),
+    per-chunk TelegramRetryAfter handling, live telemetry, and elapsed time tracking.
     """
     start_time = time.time()
     nap_count = 0
@@ -33,10 +33,10 @@ async def clone_sticker_pack(
         if not source_pack.stickers:
             raise ValueError("The source sticker pack is empty.")
 
-        # Take a safe anti-flood nap
+        # Take a safe initial nap
         nap_start = time.time()
         nap_count += 1
-        await report("💤 Taking a safe anti-flood nap (1.5s)...")
+        await report("💤 Taking an initial anti-flood nap (1.5s)...")
         await asyncio.sleep(1.5)
         total_nap_time += round(time.time() - nap_start, 1)
 
@@ -62,15 +62,13 @@ async def clone_sticker_pack(
                 )
             )
 
-        # Telegram limits create_new_sticker_set to a maximum of 50 stickers per pack.
-        # We split large packs into safe chunks of 50.
+        # Split large packs into safe chunks of 50 stickers max
         chunk_size = 50
         sticker_chunks = [all_input_stickers[i:i + chunk_size] for i in range(0, len(all_input_stickers), chunk_size)]
         
         created_links = []
 
         for index, chunk in enumerate(sticker_chunks):
-            # If there are multiple parts, append part numbers to the short name (e.g., name_1, name_2)
             if len(sticker_chunks) > 1:
                 current_short_name = f"{new_short_name}_{index + 1}"
                 current_title = f"{new_title} (Part {index + 1})"
@@ -80,20 +78,31 @@ async def clone_sticker_pack(
 
             full_short_name = f"{current_short_name}_by_{bot_info.username}"
 
+            # Safe pre-chunk rest break
             nap_start = time.time()
             nap_count += 1
-            await report(f"🚀 Creating part {index + 1} of {len(sticker_chunks)} ({len(chunk)} stickers)... Resting (2.0s)...")
-            await asyncio.sleep(2.0)
+            await report(f"🚀 Preparing part {index + 1} of {len(sticker_chunks)} ({len(chunk)} stickers)... Resting (3.0s)...")
+            await asyncio.sleep(3.0)
             total_nap_time += round(time.time() - nap_start, 1)
 
-            success = await bot.create_new_sticker_set(
-                user_id=user_id,
-                name=full_short_name,
-                title=current_title,
-                stickers=chunk,
-                sticker_format=sticker_format,
-                sticker_type=source_pack.sticker_type
-            )
+            # Attempt creation with automatic retry if Telegram rate-limits this specific chunk
+            success = False
+            while not success:
+                try:
+                    success = await bot.create_new_sticker_set(
+                        user_id=user_id,
+                        name=full_short_name,
+                        title=current_title,
+                        stickers=chunk,
+                        sticker_format=sticker_format,
+                        sticker_type=source_pack.sticker_type
+                    )
+                except TelegramRetryAfter as ex:
+                    wait_seconds = ex.retry_after + 2  # Add safety buffer
+                    nap_count += 1
+                    total_nap_time += wait_seconds
+                    await report(f"💤 Telegram flood limit hit! Sleeping for {wait_seconds}s before retrying Part {index + 1}...")
+                    await asyncio.sleep(wait_seconds)
 
             if success:
                 created_links.append(f"https://t.me/addstickers/{full_short_name}")
