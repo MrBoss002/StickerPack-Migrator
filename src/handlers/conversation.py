@@ -15,7 +15,6 @@ class CloneStickerStates(StatesGroup):
 
 STICKER_REGEX = re.compile(r"(?:https?://)?(?:t\.me|telegram\.me)/addstickers/([a-zA-Z0-9_]+)")
 
-# 1. Entry point: Only triggers when user is NOT in any active state (idle)
 @router.message(StateFilter(None), F.text & ~F.text.startswith("/"))
 async def process_sticker_link(message: Message, state: FSMContext):
     match = STICKER_REGEX.search(message.text)
@@ -33,7 +32,6 @@ async def process_sticker_link(message: Message, state: FSMContext):
     )
     await state.set_state(CloneStickerStates.waiting_for_title)
 
-# 2. Step 1: Receiving Display Name
 @router.message(CloneStickerStates.waiting_for_title, F.text & ~F.text.startswith("/"))
 async def process_title(message: Message, state: FSMContext):
     await state.update_data(new_title=message.text.strip())
@@ -43,7 +41,6 @@ async def process_title(message: Message, state: FSMContext):
     )
     await state.set_state(CloneStickerStates.waiting_for_shortname)
 
-# 3. Step 2: Receiving Short Name & Checking Availability
 @router.message(CloneStickerStates.waiting_for_shortname, F.text & ~F.text.startswith("/"))
 async def process_shortname(message: Message, state: FSMContext):
     shortname = message.text.strip()
@@ -73,7 +70,6 @@ async def process_shortname(message: Message, state: FSMContext):
     )
     await state.set_state(CloneStickerStates.waiting_for_icon)
 
-# 4. Step 3: Receiving Icon / Skip & Executing Clone with Live Progress
 @router.message(CloneStickerStates.waiting_for_icon)
 async def process_icon(message: Message, state: FSMContext):
     icon_file_id = None
@@ -89,19 +85,23 @@ async def process_icon(message: Message, state: FSMContext):
     data = await state.get_data()
     await state.clear()
 
-    # Initial status message
-    progress_msg = await message.answer("⏳ **Initialization:** Preparing to clone sticker pack...")
+    progress_msg = await message.answer("⏳ **Initializing cloning sequence...**")
 
-    # Define a helper callback to update the message text at each step
-    async def update_progress(status_text: str):
+    # Callback to update the live progress message with telemetry
+    async def update_progress(status: str, elapsed: float, naps: int, nap_duration: float):
         try:
-            await progress_msg.edit_text(f"⏳ **Cloning in Progress...**\n\n{status_text}", parse_mode="Markdown")
+            await progress_msg.edit_text(
+                f"⏳ **Cloning in Progress...**\n\n"
+                f"{status}\n\n"
+                f"⏱️ **Elapsed Time:** {elapsed}s\n"
+                f"💤 **Rest Naps Taken:** {naps} ({nap_duration}s total)",
+                parse_mode="Markdown"
+            )
         except Exception:
             pass
 
     try:
-        # Execute cloning with progress updates and safe sleep delays
-        new_pack_link = await clone_sticker_pack(
+        result = await clone_sticker_pack(
             bot=message.bot,
             user_id=message.from_user.id,
             source_short_name=data.get('source_short_name'),
@@ -113,7 +113,10 @@ async def process_icon(message: Message, state: FSMContext):
 
         await progress_msg.edit_text(
             "🎉 **Sticker Pack Cloned Successfully!**\n\n"
-            f"🔗 **Your New Pack Link:** {new_pack_link}",
+            f"🔗 **New Pack Link:** {result['link']}\n\n"
+            f"📊 **Cloning Statistics:**\n"
+            f"• ⏱️ **Total Time Taken:** {result['total_time']} seconds\n"
+            f"• 💤 **Anti-Flood Naps:** {result['nap_count']} breaks ({result['nap_time']}s total)",
             parse_mode="Markdown"
         )
     except Exception as e:
