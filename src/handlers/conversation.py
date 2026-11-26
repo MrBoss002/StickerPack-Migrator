@@ -19,16 +19,16 @@ STICKER_REGEX = re.compile(r"(?:https?://)?(?:t\.me|telegram\.me)/addstickers/([
 async def process_sticker_link(message: Message, state: FSMContext):
     match = STICKER_REGEX.search(message.text)
     if not match:
-        await message.answer("⚠️ Please send a valid Telegram sticker pack link to start cloning (e.g., `https://t.me/addstickers/...`)")
+        await message.answer("⚠️ Please send a valid Telegram sticker pack link to start cloning (e.g., <code>https://t.me/addstickers/...</code>)", parse_mode="HTML")
         return
     
     source_short_name = match.group(1)
     await state.update_data(source_short_name=source_short_name)
     
     await message.answer(
-        f"✅ **Source pack detected:** `{source_short_name}`\n\n"
-        "Now, send me the **Display Name** for your new sticker pack:",
-        parse_mode="Markdown"
+        f"✅ <b>Source pack detected:</b> <code>{source_short_name}</code>\n\n"
+        "Now, send me the <b>Display Name</b> for your new sticker pack:",
+        parse_mode="HTML"
     )
     await state.set_state(CloneStickerStates.waiting_for_title)
 
@@ -36,8 +36,9 @@ async def process_sticker_link(message: Message, state: FSMContext):
 async def process_title(message: Message, state: FSMContext):
     await state.update_data(new_title=message.text.strip())
     await message.answer(
-        "📝 Great! Now send the **Short Name / URL Suffix** for the link "
-        "(e.g., `my_awesome_pack` so the final link becomes `t.me/addstickers/my_awesome_pack`):"
+        "📝 Great! Now send the <b>Short Name / URL Suffix</b> for the link "
+        "(e.g., <code>my_awesome_pack</code> so the final link becomes <code>t.me/addstickers/my_awesome_pack</code>):",
+        parse_mode="HTML"
     )
     await state.set_state(CloneStickerStates.waiting_for_shortname)
 
@@ -47,7 +48,8 @@ async def process_shortname(message: Message, state: FSMContext):
     
     if not re.match(r"^[a-zA-Z0-9_]+$", shortname):
         await message.answer(
-            "❌ Invalid format. Short names can only contain letters, numbers, and underscores. Try again:"
+            "❌ Invalid format. Short names can only contain letters, numbers, and underscores. Try again:",
+            parse_mode="HTML"
         )
         return
 
@@ -57,7 +59,8 @@ async def process_shortname(message: Message, state: FSMContext):
     try:
         await message.bot.get_sticker_set(name=full_short_name)
         await message.answer(
-            "❌ **Short name already taken!** Another pack is already using this suffix. Please choose a different one:"
+            "❌ <b>Short name already taken!</b> Another pack is already using this suffix. Please choose a different one:",
+            parse_mode="HTML"
         )
         return
     except Exception:
@@ -65,8 +68,9 @@ async def process_shortname(message: Message, state: FSMContext):
 
     await state.update_data(new_shortname=shortname)
     await message.answer(
-        "🖼️ Almost done! Send a **custom icon/thumbnail image** for the pack, "
-        "or type `/skip` to use the first sticker from the pack automatically."
+        "🖼️ Almost done! Send a <b>custom icon/thumbnail image</b> for the pack, "
+        "or type <code>/skip</code> to use the first sticker from the pack automatically.",
+        parse_mode="HTML"
     )
     await state.set_state(CloneStickerStates.waiting_for_icon)
 
@@ -79,23 +83,23 @@ async def process_icon(message: Message, state: FSMContext):
     elif message.photo:
         icon_file_id = message.photo[-1].file_id
     else:
-        await message.answer("⚠️ Please send a valid image file as a photo, or type `/skip`.")
+        await message.answer("⚠️ Please send a valid image file as a photo, or type <code>/skip</code>.", parse_mode="HTML")
         return
 
     data = await state.get_data()
     await state.clear()
 
-    progress_msg = await message.answer("⏳ **Initializing cloning sequence...**")
+    progress_msg = await message.answer("⏳ <b>Initializing cloning sequence...</b>", parse_mode="HTML")
 
-    # Callback to update the live progress message with telemetry
+    # Callback to update the live progress message with HTML telemetry
     async def update_progress(status: str, elapsed: float, naps: int, nap_duration: float):
         try:
             await progress_msg.edit_text(
-                f"⏳ **Cloning in Progress...**\n\n"
+                f"⏳ <b>Cloning in Progress...</b>\n\n"
                 f"{status}\n\n"
-                f"⏱️ **Elapsed Time:** {elapsed}s\n"
-                f"💤 **Rest Naps Taken:** {naps} ({nap_duration}s total)",
-                parse_mode="Markdown"
+                f"⏱️ <b>Elapsed Time:</b> {elapsed}s\n"
+                f"💤 <b>Rest Naps Taken:</b> {naps} ({nap_duration}s total)",
+                parse_mode="HTML"
             )
         except Exception:
             pass
@@ -111,16 +115,16 @@ async def process_icon(message: Message, state: FSMContext):
             progress_callback=update_progress
         )
 
-        # Format links nicely whether it's 1 part or multiple split parts
-        links_text = "\n".join([f"• {link}" for link in result['links']])
+        # Format links nicely with HTML anchor tags
+        links_text = "\n".join([f"• <a href=\"{link}\">{link}</a>" for link in result['links']])
 
         await progress_msg.edit_text(
-            "🎉 **Sticker Pack Cloned Successfully!**\n\n"
-            f"🔗 **New Pack Link(s):**\n{links_text}\n\n"
-            f"📊 **Cloning Statistics:**\n"
-            f"• ⏱️ **Total Time Taken:** {result['total_time']} seconds\n"
-            f"• 💤 **Anti-Flood Naps:** {result['nap_count']} breaks ({result['nap_time']}s total)",
-            parse_mode="Markdown"
+            "🎉 <b>Sticker Pack Cloned Successfully!</b>\n\n"
+            f"🔗 <b>New Pack Link(s):</b>\n{links_text}\n\n"
+            f"📊 <b>Cloning Statistics:</b>\n"
+            f"• ⏱️ <b>Total Time Taken:</b> {result['total_time']} seconds\n"
+            f"• 💤 <b>Anti-Flood Naps:</b> {result['nap_count']} breaks ({result['nap_time']}s total)",
+            parse_mode="HTML"
         )
     except Exception as e:
-        await progress_msg.edit_text(f"❌ **Cloning Failed:**\n`{str(e)}`", parse_mode="Markdown")
+        await progress_msg.edit_text(f"❌ <b>Cloning Failed:</b>\n<code>{str(e)}</code>", parse_mode="HTML")
