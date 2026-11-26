@@ -1,0 +1,71 @@
+import asyncio
+from aiogram import Bot
+from aiogram.types import InputSticker
+from aiogram.exceptions import TelegramBadRequest
+
+async def clone_sticker_pack(
+    bot: Bot,
+    user_id: int,
+    source_short_name: str,
+    new_title: str,
+    new_short_name: str,
+    icon_file_id: str = None
+):
+    """
+    Core service to clone a sticker pack from a source short name to a new custom pack.
+    """
+    try:
+        # 1. Fetch the source sticker pack
+        source_pack = await bot.get_sticker_set(name=source_short_name)
+        
+        if not source_pack.stickers:
+            raise ValueError("The source sticker pack is empty.")
+
+        # 2. Determine sticker format type (static, animated, or video)
+        if source_pack.is_animated:
+            sticker_format = "animated" # .tgs
+        elif source_pack.is_video:
+            sticker_format = "video"    # .webm
+        else:
+            sticker_format = "static"   # .png / .webp
+
+        # Construct the full internal name required by Telegram: must end with _by_<bot_username>
+        bot_info = await bot.get_me()
+        full_short_name = f"{new_short_name}_by_{bot_info.username}"
+
+        # 3. Map existing stickers into InputSticker objects
+        # Telegram allows bots to reuse file_id directly without re-downloading every file!
+        input_stickers = []
+        for sticker in source_pack.stickers:
+            input_stickers.append(
+                InputSticker(
+                    sticker=sticker.file_id,
+                    emoji_list=sticker.emoji_list if hasattr(sticker, 'emoji_list') else [sticker.emoji]
+                )
+            )
+
+        # 4. Handle Thumbnail/Icon
+        # If user didn't provide an icon and didn't skip, use the first sticker as thumbnail
+        thumbnail = icon_file_id if icon_file_id else None
+
+        # 5. Create the new sticker set using the bot's account
+        # Note: create_new_sticker_set requires user_id (who owns the pack via the bot)
+        success = await bot.create_new_sticker_set(
+            user_id=user_id,
+            name=full_short_name,
+            title=new_title,
+            stickers=input_stickers,
+            sticker_format=sticker_format,
+            sticker_type=source_pack.sticker_type,
+            thumbnail=thumbnail
+        )
+
+        if success:
+            return f"https://t.me/addstickers/{full_short_name}"
+        else:
+            raise Exception("Telegram returned False when creating the sticker set.")
+
+    except TelegramBadRequest as e:
+        raise Exception(f"Telegram API Error: {e.message}")
+    except Exception as e:
+        raise Exception(f"Cloning failed: {str(e)}")
