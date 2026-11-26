@@ -81,8 +81,8 @@ async def clone_sticker_pack(
             # Safe pre-chunk rest break
             nap_start = time.time()
             nap_count += 1
-            await report(f"🚀 Preparing part {index + 1} of {len(sticker_chunks)} ({len(chunk)} stickers)... Resting (3.0s)...")
-            await asyncio.sleep(3.0)
+            await report(f"🚀 Preparing part {index + 1} of {len(sticker_chunks)} ({len(chunk)} stickers)... Resting (1.5s)...")
+            await asyncio.sleep(1.5)
             total_nap_time += round(time.time() - nap_start, 1)
 
             # Attempt creation with automatic retry if Telegram rate-limits this specific chunk
