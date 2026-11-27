@@ -14,9 +14,8 @@ async def clone_sticker_pack(
     progress_callback = None
 ):
     """
-    Core service to clone a sticker pack with automatic chunking (max 50 stickers per pack),
-    per-chunk TelegramRetryAfter handling with max retry limits, inter-part safety cooldowns,
-    live telemetry, and elapsed time tracking.
+    Core service to clone a sticker pack capped at a single set (max 50 stickers),
+    keeping names clean without multi-part suffixes and avoiding flood limits.
     """
     start_time = time.time()
     nap_count = 0
@@ -34,10 +33,9 @@ async def clone_sticker_pack(
         if not source_pack.stickers:
             raise ValueError("The source sticker pack is empty.")
 
-        # Take a safe initial nap
         nap_start = time.time()
         nap_count += 1
-        await report("💤 Taking an initial anti-flood nap (1.5s)...")
+        await report("💤 Taking a safe anti-flood nap (1.5s)...")
         await asyncio.sleep(1.5)
         total_nap_time += round(time.time() - nap_start, 1)
 
@@ -52,10 +50,10 @@ async def clone_sticker_pack(
 
         bot_info = await bot.get_me()
         
-        # Map all stickers into InputSticker objects
-        all_input_stickers = []
-        for sticker in source_pack.stickers:
-            all_input_stickers.append(
+        # Map stickers and cap at a maximum of 50 stickers
+        input_stickers = []
+        for sticker in source_pack.stickers[:50]:
+            input_stickers.append(
                 InputSticker(
                     sticker=sticker.file_id,
                     emoji_list=sticker.emoji_list if hasattr(sticker, 'emoji_list') else [sticker.emoji],
@@ -63,67 +61,40 @@ async def clone_sticker_pack(
                 )
             )
 
-        # Split large packs into safe chunks of 50 stickers max
-        chunk_size = 50
-        sticker_chunks = [all_input_stickers[i:i + chunk_size] for i in range(0, len(all_input_stickers), chunk_size)]
-        
-        created_links = []
+        full_short_name = f"{new_short_name}_by_{bot_info.username}"
 
-        for index, chunk in enumerate(sticker_chunks):
-            if len(sticker_chunks) > 1:
-                current_short_name = f"{new_short_name}_{index + 1}"
-                current_title = f"{new_title} (Part {index + 1})"
-            else:
-                current_short_name = new_short_name
-                current_title = new_title
+        await report(f"🚀 Creating sticker pack ({len(input_stickers)} stickers)...")
 
-            full_short_name = f"{current_short_name}_by_{bot_info.username}"
+        # Create the sticker pack safely in one go
+        success = False
+        retry_count = 0
+        max_retries = 3
 
-            # Heavy safety cooldown between parts to protect against flood bans
-            if index > 0:
-                cooldown_seconds = 18
-                nap_start = time.time()
+        while not success and retry_count < max_retries:
+            try:
+                success = await bot.create_new_sticker_set(
+                    user_id=user_id,
+                    name=full_short_name,
+                    title=new_title,
+                    stickers=input_stickers,
+                    sticker_format=sticker_format,
+                    sticker_type=source_pack.sticker_type
+                )
+            except TelegramRetryAfter as ex:
+                retry_count += 1
+                if retry_count >= max_retries:
+                    raise Exception("Telegram flood limit exceeded. Please try again later.")
+                
+                wait_seconds = ex.retry_after + 5
                 nap_count += 1
-                total_nap_time += cooldown_seconds
-                await report(f"🛡️ Safety cooldown: resting for {cooldown_seconds}s between parts to protect your bot...")
-                await asyncio.sleep(cooldown_seconds)
-            else:
-                nap_start = time.time()
-                nap_count += 1
-                await report(f"🚀 Preparing part {index + 1} of {len(sticker_chunks)} ({len(chunk)} stickers)... Resting (1.5s)...")
-                await asyncio.sleep(1.5)
-                total_nap_time += round(time.time() - nap_start, 1)
+                total_nap_time += wait_seconds
+                await report(f"💤 Telegram flood limit hit! Sleeping for {wait_seconds}s...")
+                await asyncio.sleep(wait_seconds)
 
-            # Attempt creation with strict maximum retry limit & anti-flood handling
-            success = False
-            retry_count = 0
-            max_chunk_retries = 3
+        if not success:
+            raise Exception("Telegram returned False when creating the sticker set.")
 
-            while not success and retry_count < max_chunk_retries:
-                try:
-                    success = await bot.create_new_sticker_set(
-                        user_id=user_id,
-                        name=full_short_name,
-                        title=current_title,
-                        stickers=chunk,
-                        sticker_format=sticker_format,
-                        sticker_type=source_pack.sticker_type
-                    )
-                except TelegramRetryAfter as ex:
-                    retry_count += 1
-                    if retry_count >= max_chunk_retries:
-                        raise Exception(f"Telegram flood limit exceeded too many times on Part {index + 1}. Aborting to protect your account.")
-                    
-                    wait_seconds = ex.retry_after + 5  # Safety buffer
-                    nap_count += 1
-                    total_nap_time += wait_seconds
-                    await report(f"💤 Telegram flood limit hit! Sleeping for {wait_seconds}s (Retry {retry_count}/{max_chunk_retries})...")
-                    await asyncio.sleep(wait_seconds)
-
-            if success:
-                created_links.append(f"https://t.me/addstickers/{full_short_name}")
-            else:
-                raise Exception(f"Telegram returned False when creating part {index + 1}.")
+        created_link = f"https://t.me/addstickers/{full_short_name}"
 
         nap_start = time.time()
         nap_count += 1
@@ -133,7 +104,7 @@ async def clone_sticker_pack(
 
         total_duration = round(time.time() - start_time, 1)
         return {
-            "links": created_links,
+            "links": [created_link],
             "total_time": total_duration,
             "nap_count": nap_count,
             "nap_time": round(total_nap_time, 1)
