@@ -70,7 +70,7 @@ async def clone_sticker_pack(
 
         await report(f"🚀 Creating sticker pack ({len(input_stickers)} stickers)...")
 
-        # Create the sticker pack safely in one go (omitting risky sticker_type parameters)
+        # Create the sticker pack safely in one go
         success = False
         retry_count = 0
         max_retries = 3
@@ -82,8 +82,7 @@ async def clone_sticker_pack(
                     name=full_short_name,
                     title=new_title,
                     stickers=input_stickers,
-                    sticker_format=sticker_format,
-                    thumbnail=icon_file_id
+                    sticker_format=sticker_format
                 )
             except TelegramRetryAfter as ex:
                 retry_count += 1
@@ -99,6 +98,18 @@ async def clone_sticker_pack(
 
         if not success:
             raise Exception("Telegram returned False when creating the sticker set.")
+
+        # If a custom icon/thumbnail was provided, set it now. If skipped, Telegram handles it automatically.
+        if icon_file_id:
+            try:
+                await report("🖼️ Setting custom pack thumbnail...")
+                await bot.set_sticker_set_thumbnail(
+                    name=full_short_name,
+                    user_id=user_id,
+                    thumbnail=icon_file_id
+                )
+            except Exception as thumb_err:
+                logger.warning(f"[THUMBNAIL WARNING] Failed to set custom thumbnail for {full_short_name}: {thumb_err}")
 
         created_link = f"https://t.me/addstickers/{full_short_name}"
         logger.info(f"[CLONE SUCCESS] Pack successfully created for user {user_id}: {created_link}")
