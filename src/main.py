@@ -8,6 +8,13 @@ from src.config import BOT_TOKEN
 from src.handlers.commands import router as commands_router
 from src.handlers.conversation import router as conversation_router
 
+# Configure detailed logging to see timestamps, levels, and source modules in Render logs
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - [%(levelname)s] - %(name)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
 # 1. Dummy HTTP handler to satisfy Render's port detection requirement
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -25,12 +32,9 @@ def run_dummy_server():
     server.serve_forever()
 
 async def main():
-    # Configure logging to see events in your terminal
-    logging.basicConfig(level=logging.INFO)
-    
-    # 2. Start the dummy server in a background thread (so it binds to the port instantly)
+    # 2. Start the dummy server in a background thread
     threading.Thread(target=run_dummy_server, daemon=True).start()
-    logging.info("🌐 Dummy HTTP health-check server started on port %s", os.environ.get("PORT", 10000))
+    logger.info("🌐 Dummy HTTP health-check server started on port %s", os.environ.get("PORT", 10000))
 
     # Initialize Bot and Dispatcher
     bot = Bot(token=BOT_TOKEN)
@@ -40,13 +44,18 @@ async def main():
     dp.include_router(commands_router)
     dp.include_router(conversation_router)
 
-    print("🤖 Sticker-Renamer bot is starting...")
+    logger.info("🤖 Sticker-Renamer bot is starting...")
     
-    # Start polling
-    await dp.start_polling(bot)
+    # Start polling safely with exception trapping
+    try:
+        await dp.start_polling(bot)
+    except Exception as e:
+        logger.exception(f"CRITICAL: Polling stopped unexpectedly due to error: {e}")
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("🛑 Bot stopped successfully!")
+        logger.info("🛑 Bot stopped manually via KeyboardInterrupt!")
+    except Exception as e:
+        logger.exception(f"CRITICAL: Main loop crashed: {e}")
