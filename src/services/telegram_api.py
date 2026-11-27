@@ -1,8 +1,11 @@
 import asyncio
 import time
+import logging
 from aiogram import Bot
 from aiogram.types import InputSticker
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
+
+logger = logging.getLogger(__name__)
 
 async def clone_sticker_pack(
     bot: Bot,
@@ -15,7 +18,7 @@ async def clone_sticker_pack(
 ):
     """
     Core service to clone a sticker pack capped at a single set (max 50 stickers),
-    keeping names clean without multi-part suffixes and avoiding flood limits.
+    with full traceback logging, clean naming, and safe anti-flood handling.
     """
     start_time = time.time()
     nap_count = 0
@@ -27,9 +30,10 @@ async def clone_sticker_pack(
             await progress_callback(status_msg, elapsed, nap_count, total_nap_time)
 
     try:
+        logger.info(f"[CLONE START] User {user_id} requested cloning of source pack '{source_short_name}' -> new suffix '{new_short_name}'")
         await report("📥 Fetching source sticker pack...")
-        source_pack = await bot.get_sticker_set(name=source_short_name)
         
+        source_pack = await bot.get_sticker_set(name=source_short_name)
         if not source_pack.stickers:
             raise ValueError("The source sticker pack is empty.")
 
@@ -62,10 +66,11 @@ async def clone_sticker_pack(
             )
 
         full_short_name = f"{new_short_name}_by_{bot_info.username}"
+        logger.info(f"[CLONE] Preparing set '{full_short_name}' with {len(input_stickers)} stickers (Format: {sticker_format})")
 
         await report(f"🚀 Creating sticker pack ({len(input_stickers)} stickers)...")
 
-        # Create the sticker pack safely in one go
+        # Create the sticker pack safely in one go (omitting risky sticker_type parameters)
         success = False
         retry_count = 0
         max_retries = 3
@@ -77,11 +82,11 @@ async def clone_sticker_pack(
                     name=full_short_name,
                     title=new_title,
                     stickers=input_stickers,
-                    sticker_format=sticker_format,
-                    sticker_type=source_pack.sticker_type
+                    sticker_format=sticker_format
                 )
             except TelegramRetryAfter as ex:
                 retry_count += 1
+                logger.warning(f"[FLOOD LIMIT] Hit TelegramRetryAfter for user {user_id}: retry_after={ex.retry_after}s (Attempt {retry_count}/{max_retries})")
                 if retry_count >= max_retries:
                     raise Exception("Telegram flood limit exceeded. Please try again later.")
                 
@@ -95,6 +100,7 @@ async def clone_sticker_pack(
             raise Exception("Telegram returned False when creating the sticker set.")
 
         created_link = f"https://t.me/addstickers/{full_short_name}"
+        logger.info(f"[CLONE SUCCESS] Pack successfully created for user {user_id}: {created_link}")
 
         nap_start = time.time()
         nap_count += 1
@@ -111,6 +117,8 @@ async def clone_sticker_pack(
         }
 
     except TelegramBadRequest as e:
+        logger.error(f"[TELEGRAM BAD REQUEST] User {user_id}: {e.message}", exc_info=True)
         raise Exception(f"Telegram API Error: {e.message}")
     except Exception as e:
+        logger.exception(f"[CLONE ERROR] Unhandled exception during cloning for user {user_id}: {str(e)}")
         raise Exception(f"Cloning failed: {str(e)}")
