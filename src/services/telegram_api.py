@@ -15,7 +15,8 @@ async def clone_sticker_pack(
 ):
     """
     Core service to clone a sticker pack with automatic chunking (max 50 stickers per pack),
-    per-chunk TelegramRetryAfter handling, live telemetry, and elapsed time tracking.
+    per-chunk TelegramRetryAfter handling with max retry limits, inter-part safety cooldowns,
+    live telemetry, and elapsed time tracking.
     """
     start_time = time.time()
     nap_count = 0
@@ -78,16 +79,27 @@ async def clone_sticker_pack(
 
             full_short_name = f"{current_short_name}_by_{bot_info.username}"
 
-            # Safe pre-chunk rest break
-            nap_start = time.time()
-            nap_count += 1
-            await report(f"🚀 Preparing part {index + 1} of {len(sticker_chunks)} ({len(chunk)} stickers)... Resting (1.5s)...")
-            await asyncio.sleep(1.5)
-            total_nap_time += round(time.time() - nap_start, 1)
+            # Heavy safety cooldown between parts to protect against flood bans
+            if index > 0:
+                cooldown_seconds = 18
+                nap_start = time.time()
+                nap_count += 1
+                total_nap_time += cooldown_seconds
+                await report(f"🛡️ Safety cooldown: resting for {cooldown_seconds}s between parts to protect your bot...")
+                await asyncio.sleep(cooldown_seconds)
+            else:
+                nap_start = time.time()
+                nap_count += 1
+                await report(f"🚀 Preparing part {index + 1} of {len(sticker_chunks)} ({len(chunk)} stickers)... Resting (1.5s)...")
+                await asyncio.sleep(1.5)
+                total_nap_time += round(time.time() - nap_start, 1)
 
-            # Attempt creation with automatic retry if Telegram rate-limits this specific chunk
+            # Attempt creation with strict maximum retry limit & anti-flood handling
             success = False
-            while not success:
+            retry_count = 0
+            max_chunk_retries = 3
+
+            while not success and retry_count < max_chunk_retries:
                 try:
                     success = await bot.create_new_sticker_set(
                         user_id=user_id,
@@ -98,10 +110,14 @@ async def clone_sticker_pack(
                         sticker_type=source_pack.sticker_type
                     )
                 except TelegramRetryAfter as ex:
-                    wait_seconds = ex.retry_after + 2  # Add safety buffer
+                    retry_count += 1
+                    if retry_count >= max_chunk_retries:
+                        raise Exception(f"Telegram flood limit exceeded too many times on Part {index + 1}. Aborting to protect your account.")
+                    
+                    wait_seconds = ex.retry_after + 5  # Safety buffer
                     nap_count += 1
                     total_nap_time += wait_seconds
-                    await report(f"💤 Telegram flood limit hit! Sleeping for {wait_seconds}s before retrying Part {index + 1}...")
+                    await report(f"💤 Telegram flood limit hit! Sleeping for {wait_seconds}s (Retry {retry_count}/{max_chunk_retries})...")
                     await asyncio.sleep(wait_seconds)
 
             if success:
