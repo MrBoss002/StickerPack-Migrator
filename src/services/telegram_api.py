@@ -1,5 +1,6 @@
 import asyncio
 import time
+import random
 import logging
 from aiogram import Bot
 from aiogram.types import InputSticker
@@ -18,7 +19,7 @@ async def clone_sticker_pack(
 ):
     """
     Core service to clone a sticker pack capped at a single set (max 50 stickers),
-    with full traceback logging, clean naming, and safe anti-flood handling.
+    with automatic unique shortname collision handling, full traceback logging, and anti-flood protection.
     """
     start_time = time.time()
     nap_count = 0
@@ -30,7 +31,7 @@ async def clone_sticker_pack(
             await progress_callback(status_msg, elapsed, nap_count, total_nap_time)
 
     try:
-        logger.info(f"[CLONE START] User {user_id} requested cloning of source pack '{source_short_name}' -> new suffix '{new_short_name}'")
+        logger.info(f"[CLONE START] User {user_id} requested cloning of source pack '{source_short_name}' -> base suffix '{new_short_name}'")
         await report("📥 Fetching source sticker pack...")
         
         source_pack = await bot.get_sticker_set(name=source_short_name)
@@ -65,17 +66,20 @@ async def clone_sticker_pack(
                 )
             )
 
-        full_short_name = f"{new_short_name}_by_{bot_info.username}"
-        logger.info(f"[CLONE] Preparing set '{full_short_name}' with {len(input_stickers)} stickers (Format: {sticker_format})")
+        base_short_name = new_short_name
+        current_short_name = base_short_name
+        full_short_name = f"{current_short_name}_by_{bot_info.username}"
 
         await report(f"🚀 Creating sticker pack ({len(input_stickers)} stickers)...")
 
-        # Create the sticker pack safely in one go
         success = False
         retry_count = 0
-        max_retries = 3
+        max_retries = 5
 
         while not success and retry_count < max_retries:
+            full_short_name = f"{current_short_name}_by_{bot_info.username}"
+            logger.info(f"[CLONE] Attempting to create set '{full_short_name}' (Attempt {retry_count + 1})")
+
             try:
                 success = await bot.create_new_sticker_set(
                     user_id=user_id,
@@ -84,9 +88,20 @@ async def clone_sticker_pack(
                     stickers=input_stickers,
                     sticker_format=sticker_format
                 )
+            except TelegramBadRequest as ex:
+                if "SHORTNAME_OCCUPY_FAILED" in str(ex):
+                    retry_count += 1
+                    # Append a random 2-digit number to guarantee uniqueness on collision
+                    rand_suffix = random.randint(10, 99)
+                    current_short_name = f"{base_short_name}_{rand_suffix}"
+                    logger.warning(f"[NAME OCCUPIED] Short name occupied. Retrying with unique suffix: '{current_short_name}'")
+                    await report(f"⚠️ Name occupied! Trying unique suffix <code>{current_short_name}</code>...")
+                    await asyncio.sleep(1.0)
+                    continue
+                raise ex
             except TelegramRetryAfter as ex:
                 retry_count += 1
-                logger.warning(f"[FLOOD LIMIT] Hit TelegramRetryAfter for user {user_id}: retry_after={ex.retry_after}s (Attempt {retry_count}/{max_retries})")
+                logger.warning(f"[FLOOD LIMIT] Hit TelegramRetryAfter for user {user_id}: retry_after={ex.retry_after}s")
                 if retry_count >= max_retries:
                     raise Exception("Telegram flood limit exceeded. Please try again later.")
                 
@@ -97,9 +112,9 @@ async def clone_sticker_pack(
                 await asyncio.sleep(wait_seconds)
 
         if not success:
-            raise Exception("Telegram returned False when creating the sticker set.")
+            raise Exception("Failed to create the sticker set after multiple unique name attempts.")
 
-        # If a custom icon/thumbnail was provided, set it now. If skipped, Telegram handles it automatically.
+        # If a custom icon/thumbnail was provided, set it now
         if icon_file_id:
             try:
                 await report("🖼️ Setting custom pack thumbnail...")
@@ -112,7 +127,7 @@ async def clone_sticker_pack(
                 logger.warning(f"[THUMBNAIL WARNING] Failed to set custom thumbnail for {full_short_name}: {thumb_err}")
 
         created_link = f"https://t.me/addstickers/{full_short_name}"
-        logger.info(f"[CLONE SUCCESS] Pack successfully created for user {user_id}: {created_link}")
+        logger.info(f"[CLONE SUCCESS] Pack successfully created: {created_link}")
 
         nap_start = time.time()
         nap_count += 1
