@@ -83,6 +83,7 @@ async def clone_sticker_pack(
                     title=new_title,
                     stickers=input_stickers,
                     sticker_format=sticker_format
+                    thumbnail=icon_file_id
                 )
             except TelegramRetryAfter as ex:
                 retry_count += 1
